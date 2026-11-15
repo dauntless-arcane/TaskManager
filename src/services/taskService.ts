@@ -217,24 +217,30 @@ export function createTaskService(repo: Repository, now: () => Date = () => new 
     return { deleted: subtree.length };
   }
 
-  /** Deep-copies a subtree next to the original. Copies start as 'todo' with fresh ids. */
-  async function duplicate(id: string): Promise<Task> {
+  /**
+   * Deep-copies a subtree. Copies start as 'todo' with fresh ids.
+   * Without `to` the copy sits next to the original; with `to` it becomes a child of `to.parentId` (null = top level).
+   */
+  async function duplicate(id: string, to?: { parentId: string | null }): Promise<Task> {
     const subtree = await repo.getSubtree(id);
-    const root = subtree[0];
     const ids = new Map(subtree.map((t) => [t.id, newId()]));
     const stamp = ts();
     const copies = subtree.map<Task>((t) => ({
       ...t,
       id: ids.get(t.id)!,
       parent_id: t.id === id ? t.parent_id : ids.get(t.parent_id!)!,
-      title: t.id === id ? `${t.title} (copy)` : t.title,
+      title: t.id === id && !to ? `${t.title} (copy)` : t.title,
       status: 'todo',
       completed_at: null,
       created_at: stamp,
       updated_at: stamp,
     }));
     const copyRoot = copies[0];
-    copyRoot.position = await nextPosition(root.parent_id);
+    if (to) {
+      if (to.parentId) await mustGet(to.parentId);
+      copyRoot.parent_id = to.parentId;
+    }
+    copyRoot.position = await nextPosition(copyRoot.parent_id);
     await commitWithSnapshots(
       { putTasks: copies, history: copies.map((c) => event(c, 'created', null, c.title)) },
       copies.map((c) => c.id),

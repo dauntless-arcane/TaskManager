@@ -90,6 +90,26 @@ export function TaskExplorer({ onError }: { onError(message: string): void }) {
     [guard, run, activeListId, assignToList],
   );
 
+  /** Moves the task with its whole subtree to the top level of a list (null = unsorted). */
+  const moveToList = useCallback(
+    (task: Task, listId: string | null) =>
+      guard(async () => {
+        if (task.parent_id !== null) await run((s) => s.move(task.id, null));
+        await assignToList(task.id, listId);
+      }),
+    [guard, run, assignToList],
+  );
+
+  /** Deep-copies the task and its subtree to the top level of a list. */
+  const copyToList = useCallback(
+    (task: Task, listId: string) =>
+      guard(async () => {
+        const copy = await run((s) => s.duplicate(task.id, { parentId: null }));
+        await assignToList(copy.id, listId);
+      }),
+    [guard, run, assignToList],
+  );
+
   const requestDelete = (task: Task) => {
     const count = useApp.getState().tasks.filter((t) => t.parent_id === task.id).length;
     setPending({ kind: 'delete', task, count });
@@ -127,21 +147,24 @@ export function TaskExplorer({ onError }: { onError(message: string): void }) {
       checked: t.priority === p,
       onSelect: () => void guard(() => run((s) => s.update(t.id, { priority: p }))),
     })),
-    ...(t.parent_id === null && lists.length > 0
+    ...(lists.length > 0
       ? ([
-          { kind: 'heading', label: 'List' },
+          { kind: 'separator' },
+          { kind: 'heading', label: 'Move to list' },
           {
             kind: 'item',
-            label: 'None',
-            checked: !useApp.getState().membership[t.id],
-            onSelect: () => void guard(() => assignToList(t.id, null)),
+            label: 'No list (All Tasks)',
+            checked: t.parent_id === null && !useApp.getState().membership[t.id],
+            onSelect: () => void moveToList(t, null),
           },
           ...lists.map<MenuItem>((l) => ({
             kind: 'item',
             label: l.name,
-            checked: useApp.getState().membership[t.id] === l.id,
-            onSelect: () => void guard(() => assignToList(t.id, l.id)),
+            checked: t.parent_id === null && useApp.getState().membership[t.id] === l.id,
+            onSelect: () => void moveToList(t, l.id),
           })),
+          { kind: 'heading', label: 'Copy to list' },
+          ...lists.map<MenuItem>((l) => ({ kind: 'item', label: l.name, onSelect: () => void copyToList(t, l.id) })),
         ] as MenuItem[])
       : []),
     { kind: 'separator' },

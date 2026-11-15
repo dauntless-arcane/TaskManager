@@ -1,4 +1,4 @@
-import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragMoveEvent } from '@dnd-kit/core';
+import { DndContext, PointerSensor, useDroppable, useSensor, useSensors, type DragEndEvent, type DragMoveEvent } from '@dnd-kit/core';
 import { useMemo, useState } from 'react';
 import { visibleIdsFor } from '../../domain/tasks/filter';
 import { indexTasks, wouldCreateCycle } from '../../domain/tasks/tree';
@@ -15,6 +15,10 @@ interface Props {
   onContextMenu(e: React.MouseEvent, task: Task): void;
   onMove(id: string, parentId: string | null, index?: number): void;
 }
+
+const ROOT_ID = '__root__';
+/** Horizontal drag distance (px) that outdents one level when dropping below a row. */
+const OUTDENT_PX = 28;
 
 interface Flat {
   task: Task;
@@ -75,8 +79,15 @@ export function TaskTree(p: Props) {
     if (!over || over.id === active.id || !(activatorEvent instanceof PointerEvent)) return null;
     const ratio = (activatorEvent.clientY + delta.y - over.rect.top) / over.rect.height;
     const zone: DropZone = ratio < 0.25 ? 'before' : ratio > 0.75 ? 'after' : 'inside';
+    if (over.id === ROOT_ID) return { overId: ROOT_ID, zone: 'after' };
     const overTask = index.get(String(over.id));
     if (!overTask) return null;
+    if (zone === 'after' && delta.x <= -OUTDENT_PX) {
+      // Dragging left while dropping below a row climbs out of its parent(s), one level per OUTDENT_PX.
+      let anchor = overTask;
+      for (let n = Math.floor(-delta.x / OUTDENT_PX); n > 0 && anchor.parent_id; n--) anchor = index.get(anchor.parent_id) ?? anchor;
+      return wouldCreateCycle(index, String(active.id), anchor.parent_id) ? null : { overId: anchor.id, zone: 'after' };
+    }
     const newParent = zone === 'inside' ? overTask.id : overTask.parent_id;
     return wouldCreateCycle(index, String(active.id), newParent) ? null : { overId: overTask.id, zone };
   };
@@ -86,6 +97,10 @@ export function TaskTree(p: Props) {
     setHint(null);
     if (!target) return;
     const dragId = String(e.active.id);
+    if (target.overId === ROOT_ID) {
+      p.onMove(dragId, null);
+      return;
+    }
     const over = index.get(target.overId)!;
     if (target.zone === 'inside') {
       expand(over.id);
@@ -127,7 +142,23 @@ export function TaskTree(p: Props) {
             onContextMenu={p.onContextMenu}
           />
         ))}
+        <RootDropZone active={hint?.overId === ROOT_ID} />
       </div>
     </DndContext>
+  );
+}
+
+/** Drop target below the tree: releasing a task here makes it a top-level project. */
+function RootDropZone({ active }: { active: boolean }) {
+  const { setNodeRef, active: dragging } = useDroppable({ id: ROOT_ID });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`mt-1 flex min-h-16 items-center justify-center rounded-md text-xs ${
+        active ? 'ring-2 ring-inset ring-[var(--accent)]' : dragging ? 'border border-dashed border-[var(--border)]' : ''
+      } text-[var(--text-dim)]`}
+    >
+      {dragging ? 'Drop here to make top-level' : ''}
+    </div>
   );
 }
