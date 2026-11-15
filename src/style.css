@@ -1,0 +1,28 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #fafaf9;
+  --surface: #ffffff;
+  --muted: #f1f0ee;
+  --border: #e4e2de;
+  --text: #1c1b19;
+  --text-dim: #6e6a63;
+  --accent: #4f6bed;
+  --danger: #d4432f;
+  color-scheme: light;
+}
+.dark {
+  --bg: #121214;
+  --surface: #19191c;
+  --muted: #232327;
+  --border: #2d2d33;
+  --text: #ececee;
+  --text-dim: #9b9aa3;
+  --accent: #7b92ff;
+  --danger: #ef6a58;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
