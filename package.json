@@ -9,8 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test",
-    "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
