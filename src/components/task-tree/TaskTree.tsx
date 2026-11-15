@@ -26,11 +26,16 @@ interface Flat {
  * Only expanded branches are flattened, so collapsed subtrees cost nothing to render.
  * While filtering, `visible` restricts rows to matches and their ancestors, and everything shown is expanded.
  */
-function flatten(children: ReadonlyMap<string | null, Task[]>, expanded: ReadonlySet<string>, visible: ReadonlySet<string> | null): Flat[] {
+function flatten(
+  children: ReadonlyMap<string | null, Task[]>,
+  expanded: ReadonlySet<string>,
+  visible: ReadonlySet<string> | null,
+  inList: (root: Task) => boolean,
+): Flat[] {
   const out: Flat[] = [];
   const kidsOf = (id: string | null) => (children.get(id) ?? []).filter((t) => !visible || visible.has(t.id));
   const stack: { task: Task; depth: number }[] = [];
-  const roots = kidsOf(null);
+  const roots = kidsOf(null).filter(inList);
   for (let i = roots.length - 1; i >= 0; i--) stack.push({ task: roots[i], depth: 0 });
   while (stack.length) {
     const { task, depth } = stack.pop()!;
@@ -48,6 +53,8 @@ export function TaskTree(p: Props) {
   const selectedId = useApp((s) => s.selectedId);
   const progress = useApp((s) => s.progress);
   const filters = useApp((s) => s.filters);
+  const activeListId = useApp((s) => s.activeListId);
+  const membership = useApp((s) => s.membership);
   const select = useApp((s) => s.select);
   const toggle = useApp((s) => s.toggle);
   const expand = useApp((s) => s.expand);
@@ -57,7 +64,10 @@ export function TaskTree(p: Props) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const filtered = useMemo(() => visibleIdsFor(tasks, filters), [tasks, filters]);
-  const rows = useMemo(() => flatten(children, expanded, filtered?.visible ?? null), [children, expanded, filtered]);
+  const rows = useMemo(
+    () => flatten(children, expanded, filtered?.visible ?? null, (root) => activeListId === null || membership[root.id] === activeListId),
+    [children, expanded, filtered, activeListId, membership],
+  );
   const index = useMemo(() => indexTasks(tasks), [tasks]);
 
   const zoneFor = (e: DragMoveEvent): { overId: string; zone: DropZone } | null => {
@@ -86,8 +96,12 @@ export function TaskTree(p: Props) {
     p.onMove(dragId, over.parent_id, siblings.findIndex((t) => t.id === over.id) + (target.zone === 'after' ? 1 : 0));
   };
 
-  if (filtered && rows.length === 0) {
-    return <p className="p-6 text-center text-sm text-[var(--text-dim)]">No tasks match these filters.</p>;
+  if (rows.length === 0) {
+    return (
+      <p className="p-6 text-center text-sm text-[var(--text-dim)]">
+        {filtered ? 'No tasks match these filters.' : 'No projects in this list yet.'}
+      </p>
+    );
   }
 
   return (

@@ -2,6 +2,7 @@ import { FolderPlus } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { ContextMenu, type MenuItem } from '../../components/common/ContextMenu';
+import { ListSidebar } from '../../components/lists/ListSidebar';
 import { DetailPanel } from '../../components/task-details/DetailPanel';
 import { FilterBar } from '../../components/task-tree/FilterBar';
 import { MoveDialog } from '../../components/task-tree/MoveDialog';
@@ -21,6 +22,10 @@ export function TaskExplorer({ onError }: { onError(message: string): void }) {
   const expand = useApp((s) => s.expand);
   const selected = useApp((s) => (s.selectedId ? s.tasks.find((t) => t.id === s.selectedId) ?? null : null));
   const taskCount = useApp((s) => s.tasks.length);
+  const activeListId = useApp((s) => s.activeListId);
+  const activeList = useApp((s) => s.lists.find((l) => l.id === s.activeListId) ?? null);
+  const lists = useApp((s) => s.lists);
+  const assignToList = useApp((s) => s.assignToList);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; task: Task } | null>(null);
@@ -42,11 +47,12 @@ export function TaskExplorer({ onError }: { onError(message: string): void }) {
     (parentId: string | null) =>
       guard(async () => {
         const t = await run((s) => s.create({ title: 'New task', parent_id: parentId }));
+        if (!parentId && activeListId) await assignToList(t.id, activeListId);
         if (parentId) expand(parentId);
         select(t.id);
         setEditingId(t.id);
       }),
-    [guard, run, expand, select],
+    [guard, run, expand, select, activeListId, assignToList],
   );
 
   const setStatus = useCallback(
@@ -75,8 +81,13 @@ export function TaskExplorer({ onError }: { onError(message: string): void }) {
   );
 
   const move = useCallback(
-    (id: string, parentId: string | null, index?: number) => guard(() => run((s) => s.move(id, parentId, index))),
-    [guard, run],
+    (id: string, parentId: string | null, index?: number) =>
+      guard(async () => {
+        await run((s) => s.move(id, parentId, index));
+        // A task dropped at the top level while viewing a list joins that list.
+        if (parentId === null && activeListId) await assignToList(id, activeListId);
+      }),
+    [guard, run, activeListId, assignToList],
   );
 
   const requestDelete = (task: Task) => {
@@ -116,15 +127,33 @@ export function TaskExplorer({ onError }: { onError(message: string): void }) {
       checked: t.priority === p,
       onSelect: () => void guard(() => run((s) => s.update(t.id, { priority: p }))),
     })),
+    ...(t.parent_id === null && lists.length > 0
+      ? ([
+          { kind: 'heading', label: 'List' },
+          {
+            kind: 'item',
+            label: 'None',
+            checked: !useApp.getState().membership[t.id],
+            onSelect: () => void guard(() => assignToList(t.id, null)),
+          },
+          ...lists.map<MenuItem>((l) => ({
+            kind: 'item',
+            label: l.name,
+            checked: useApp.getState().membership[t.id] === l.id,
+            onSelect: () => void guard(() => assignToList(t.id, l.id)),
+          })),
+        ] as MenuItem[])
+      : []),
     { kind: 'separator' },
     { kind: 'item', label: 'Delete…', destructive: true, onSelect: () => requestDelete(t) },
   ];
 
   return (
     <div className="flex h-full min-h-0">
+      <ListSidebar onError={onError} />
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
-          <h1 className="text-lg font-semibold">All Tasks</h1>
+          <h1 className="text-lg font-semibold">{activeList?.name ?? 'All Tasks'}</h1>
           <button onClick={() => add(null)} className="flex items-center gap-1.5 rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white">
             <FolderPlus size={15} /> New project
           </button>
